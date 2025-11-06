@@ -28,7 +28,7 @@ def run_daily_summary(target_date: date | None = None) -> None:
     cursor = conn.cursor()
     try:
         print(f"Running daily summary for {target_date}...")
-        # Call stored procedure
+        # Call stored procedure - it only takes date parameter
         cursor.callproc('sp_UpdateDailySummaries', [target_date])
         # Consume any result sets to keep connector happy
         try:
@@ -37,7 +37,7 @@ def run_daily_summary(target_date: date | None = None) -> None:
         except Exception:
             pass
         conn.commit()
-        print("✓ Daily summary updated")
+        print(f"[OK] Daily summary updated for {target_date}")
     except Exception as e:
         conn.rollback()
         print(f"ERROR: {e}")
@@ -48,12 +48,19 @@ def run_daily_summary(target_date: date | None = None) -> None:
 
 
 if __name__ == "__main__":
-    # Optional CLI arg: YYYY-MM-DD
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Run daily summary job for a specific date and user.')
+    parser.add_argument('--date', type=str, help='Date in YYYY-MM-DD format. Defaults to today.')
+    parser.add_argument('--user', type=int, help='User ID (deprecated - procedure runs for all users).')
+    args = parser.parse_args()
+
     arg_date = None
-    if len(sys.argv) > 1:
+    if args.date:
         try:
-            arg_date = date.fromisoformat(sys.argv[1])
+            arg_date = date.fromisoformat(args.date)
         except ValueError:
             print("Invalid date format. Use YYYY-MM-DD")
             sys.exit(1)
-    run_daily_summary(arg_date)
+
+    run_daily_summary(target_date=arg_date)

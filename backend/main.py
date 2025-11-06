@@ -72,19 +72,20 @@ def read_root():
     return {"status": "Digital Drift Tracker API is running"}
 
 @app.post("/api/session/start", response_model=SessionResponse)
-async def session_start(payload: SessionStartPayload):
+async def session_start(payload: SessionStartPayload, current_user: dict = Depends(get_current_user)):
     conn = get_db_connection()
     if conn is None:
         raise HTTPException(status_code=500, detail="Database connection failed")
     
     cursor = conn.cursor()
+    user_id = current_user["user_id"]
     query = """
         INSERT INTO sessions (user_id, browser_name, browser_version, platform)
         VALUES (%s, %s, %s, %s)
     """
     # Note: You have 'timezone' in your 'user' table, not 'sessions'.
     # This assumes user_id is valid.
-    cursor.execute(query, (payload.user_id, payload.browser_name, payload.browser_version, payload.platform))
+    cursor.execute(query, (user_id, payload.browser_name, payload.browser_version, payload.platform))
     sid = cursor.lastrowid
     conn.commit()
     cursor.close()
@@ -530,7 +531,7 @@ async def add_to_whitelist(payload: dict = Body(...), current_user: dict = Depen
         cursor.close()
         conn.close()
 
-@app.delete("/api/whitelist")
+@app.delete("/api/whitelist/{domain_id}")
 async def remove_from_whitelist(domain_id: int, current_user: dict = Depends(get_current_user)):
     """Remove a domain from the user's whitelist."""
     conn = get_db_connection()
@@ -709,3 +710,7 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
 # To run this app:
 # In your terminal (with venv activated), run:
 # uvicorn main:app --reload
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

@@ -4,9 +4,7 @@ const API_URL = 'http://127.0.0.1:8000';
 let eventBatch = [];
 let batchTimer;
 
-// --- Mock User/Session ---
 // In a real app, you'd get this after a login.
-const MOCK_USER_ID = 1;
 let currentSessionId = null;
 
 // A map to store the 'tid' we get from the backend
@@ -15,9 +13,15 @@ const chromeTabToDbIdMap = new Map();
 // --- Core API Functions ---
 async function apiPost(endpoint, body) {
   try {
+    const { auth_token } = await chrome.storage.local.get(['auth_token']);
+    const headers = { 'Content-Type': 'application/json' };
+    if (auth_token) {
+      headers['Authorization'] = `Bearer ${auth_token}`;
+    }
+
     const response = await fetch(`${API_URL}${endpoint}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: headers,
       body: JSON.stringify(body),
     });
     if (!response.ok) {
@@ -30,8 +34,12 @@ async function apiPost(endpoint, body) {
 }
 
 async function startSession() {
+  const { auth_token } = await chrome.storage.local.get(['auth_token']);
+  if (!auth_token) {
+    console.log("No auth token, skipping session start");
+    return;
+  }
   const sessionData = {
-    user_id: MOCK_USER_ID,
     browser_name: "Chrome", // Simplified
     browser_version: "110", // Simplified
     platform: "Windows", // Simplified
@@ -83,7 +91,6 @@ async function sendBatch() {
   
   await apiPost('/api/events/batch', {
     session_id: currentSessionId,
-    user_id: MOCK_USER_ID,
     events: batchToSend,
   });
   console.log(`Sent batch of ${batchToSend.length} events`);
@@ -110,9 +117,9 @@ chrome.tabs.onCreated.addListener(async (tab) => {
       if (url.startsWith('http://') || url.startsWith('https://')) {
         const payload = {
           session_id: currentSessionId,
-          user_id: MOCK_USER_ID,
           url: url,
           title: tabInfo.title || 'New Tab',
+          // user_id is not needed - backend gets it from JWT token
         };
         
         const response = await apiPost('/api/tab/open', payload);
@@ -162,7 +169,6 @@ chrome.tabs.onUpdated.addListener(async (chromeTabId, changeInfo, tab) => {
     if (url.startsWith('http://') || url.startsWith('https://')) {
       const payload = {
         session_id: currentSessionId,
-        user_id: MOCK_USER_ID,
         url: url,
         title: tab.title || 'New Tab',
       };
@@ -216,6 +222,11 @@ chrome.storage.local.get('sid', (data) => {
     currentSessionId = data.sid;
     console.log('Rejoined session:', currentSessionId);
   } else {
-    startSession();
+    // Check for auth token before starting a session
+    chrome.storage.local.get('auth_token', (data) => {
+        if(data.auth_token) {
+            startSession();
+        }
+    });
   }
 });

@@ -138,7 +138,7 @@ DELIMITR ;
 
 
 DELIMITER $$
-CREATE PROCEDURE sp_UpdateDailySummaries(IN p_date DATE)
+CREATE PROCEDURE sp_UpdateDailySummaries(IN p_user_id INT, IN p_date DATE)
 BEGIN
     -- This is a complex query. It calculates the duration of each event
     -- by finding the time until the *next* event on the same tab.
@@ -158,7 +158,7 @@ BEGIN
                 10 -- Default 10s for the last event
             ) AS duration_seconds
         FROM activity_event
-        WHERE DATE(timestamp) = p_date
+        WHERE DATE(timestamp) = p_date AND user_id = p_user_id
     )
     SELECT
         ed.user_id,

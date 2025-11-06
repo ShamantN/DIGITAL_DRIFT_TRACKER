@@ -94,7 +94,7 @@ def analyze_drifts_for_session(session_id):
                     description = f"User idle for {minutes_idle} minutes"
                     insert_drift(cursor, session_id, last_event_time, event_time,
                                 'Idle / Away', description, 'LOW', None)
-                    print(f"  ✓ Detected Idle/Away: {description}")
+                    print(f"  [OK] Detected Idle/Away: {description}")
             
             # 3. Track tab switches for rapid switching detection
             if event_type == 'TAB_FOCUS':
@@ -107,7 +107,7 @@ def analyze_drifts_for_session(session_id):
                     description = f"Rapidly switched between {len(tab_switches)} tabs in 30 seconds"
                     insert_drift(cursor, session_id, tab_switches[0], event_time,
                                 'Rapid Tab Switching', description, 'MODERATE', event['tab_id'])
-                    print(f"  ✓ Detected Rapid Tab Switching: {description}")
+                    print(f"  [OK] Detected Rapid Tab Switching: {description}")
                     tab_switches = []  # Reset after detection
             
             # 4. Detect Unproductive Loop (revisiting same unproductive domains)
@@ -121,13 +121,13 @@ def analyze_drifts_for_session(session_id):
                     description = f"Repeatedly visited {event['domain_name']} ({len(recent_unproductive)+1} times)"
                     insert_drift(cursor, session_id, recent_unproductive[0]['timestamp'], event_time,
                                 'Unproductive Loop', description, 'MODERATE', event['tab_id'])
-                    print(f"  ✓ Detected Unproductive Loop: {description}")
+                    print(f"  [OK] Detected Unproductive Loop: {description}")
             
             last_event_time = event_time
             last_event = event
         
         conn.commit()
-        print(f"✓ Analysis complete for session {session_id}")
+        print(f"[OK] Analysis complete for session {session_id}")
         
     except Exception as e:
         conn.rollback()
@@ -140,6 +140,9 @@ def analyze_drifts_for_session(session_id):
 
 def insert_drift(cursor, session_id, event_start, event_end, drift_type, description, severity, tab_id=None, event_meta=None):
     """Insert a drift event into the database."""
+    # Calculate duration in seconds
+    duration = int((event_end - event_start).total_seconds())
+    
     # Check if this drift already exists (avoid duplicates)
     check_query = """
         SELECT drift_id FROM drift_event 
@@ -157,23 +160,13 @@ def insert_drift(cursor, session_id, event_start, event_end, drift_type, descrip
     # Insert the drift event
     insert_query = """
         INSERT INTO drift_event 
-        (session_id, event_start, event_end, drift_type, description, severity, tab_id, event_meta)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        (session_id, event_start, event_end, duration_seconds, drift_type, description, severity)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
     """
-    cursor.execute(insert_query, (session_id, event_start, event_end, drift_type, description, severity, tab_id, event_meta))
-    drift_id = cursor.lastrowid
-    
-    # Link to tab if provided
-    if tab_id:
-        try:
-            link_query = "INSERT INTO drift_involves_tab (tab_id, drift_id) VALUES (%s, %s)"
-            cursor.execute(link_query, (tab_id, drift_id))
-        except Exception:
-            # Ignore duplicate key errors
-            pass
+    cursor.execute(insert_query, (session_id, event_start, event_end, duration, drift_type, description, severity))
 
-def analyze_recent_sessions(hours=24):
-    """Analyze all active sessions from the last N hours."""
+def analyze_recent_sessions(user_id, hours=24):
+    """Analyze all active sessions for a given user from the last N hours."""
     conn = get_db_connection()
     if not conn:
         print("Failed to connect to database")
@@ -182,18 +175,19 @@ def analyze_recent_sessions(hours=24):
     cursor = conn.cursor()
     
     try:
-        # Get all active sessions from the last N hours
+        # Get all active sessions from the last N hours for the given user
         cutoff_time = datetime.now() - timedelta(hours=hours)
         query = """
             SELECT sid, start_time FROM sessions 
-            WHERE start_time >= %s 
+            WHERE user_id = %s
+            AND start_time >= %s 
             AND (end_time IS NULL OR end_time >= %s)
             ORDER BY start_time DESC
         """
-        cursor.execute(query, (cutoff_time, cutoff_time))
+        cursor.execute(query, (user_id, cutoff_time, cutoff_time))
         sessions = cursor.fetchall()
         
-        print(f"Found {len(sessions)} active sessions to analyze...\n")
+        print(f"Found {len(sessions)} active sessions to analyze for user {user_id}...\n")
         
         for row in sessions:
             session_id = row[0]
@@ -245,13 +239,13 @@ def analyze_focus_breaks(cursor, user_id, session_id, events):
         insert_drift(cursor, session_id, drift_start_time, 
                     drift_start_time + timedelta(seconds=drift_duration),
                     'FOCUS_BREAK', description, severity, tab_id, event_meta)
-        print(f"  ✓ Detected Focus Break: {description}")
+        print(f"  [OK] Detected Focus Break: {description}")
 
 def analyze_drift_triggers(cursor, user_id, session_id, events):
     """Analyze drift triggers (domains that precede high-severity drifts)."""
     query = """
         WITH HighSeverityDrifts AS (
-            SELECT session_id, event_start, event_id
+            SELECT session_id, event_start, drift_id
             FROM drift_event
             WHERE severity = 'HIGH' 
               AND session_id IN (SELECT sid FROM sessions WHERE user_id = %s)
@@ -259,7 +253,7 @@ def analyze_drift_triggers(cursor, user_id, session_id, events):
         LastActivityBeforeDrift AS (
             SELECT 
                 hsd.event_start,
-                hsd.event_id,
+                hsd.drift_id,
                 (SELECT ae.tab_id 
                  FROM activity_event ae 
                  WHERE ae.session_id = hsd.session_id AND ae.timestamp < hsd.event_start 
@@ -270,25 +264,25 @@ def analyze_drift_triggers(cursor, user_id, session_id, events):
         )
         SELECT 
             d.domain_name, d.category, COUNT(*) AS drift_trigger_count,
-            labd.event_id, labd.last_tab_id
+            labd.drift_id, labd.last_tab_id
         FROM LastActivityBeforeDrift labd
         JOIN tab t ON labd.last_tab_id = t.tid 
         JOIN domains d ON t.domain_id = d.id 
         WHERE d.category = 'Productive' 
-        GROUP BY d.domain_name, d.category, labd.event_id, labd.last_tab_id
+        GROUP BY d.domain_name, d.category, labd.drift_id, labd.last_tab_id
         ORDER BY drift_trigger_count DESC
     """
     cursor.execute(query, (user_id,))
     results = cursor.fetchall()
     
     for row in results:
-        domain_name, category, drift_trigger_count, event_id, last_tab_id = row
+        domain_name, category, drift_trigger_count, drift_id, last_tab_id = row
         description = f"{domain_name} triggered {drift_trigger_count} high-severity drifts"
         event_meta = json.dumps({"drift_trigger_count": drift_trigger_count, 
                                "domain_name": domain_name, "tab_id": last_tab_id})
         insert_drift(cursor, session_id, events[0]['timestamp'], events[-1]['timestamp'],
                     'DRIFT_TRIGGER', description, 'HIGH', last_tab_id, event_meta)
-        print(f"  ✓ Detected Drift Trigger: {description}")
+        print(f"  [OK] Detected Drift Trigger: {description}")
 
 def analyze_search_to_unproductive(cursor, user_id, session_id, events):
     """Analyze search-to-unproductive drifts."""
@@ -365,17 +359,50 @@ def analyze_task_abandonment(cursor, user_id, session_id, events):
                     'TASK_ABANDONMENT', description, severity, tab_id, event_meta)
         print(f"  ✓ Detected Task Abandonment: {description}")
 
-if __name__ == '__main__':
+def get_all_user_ids():
+    """Get all user IDs from the database."""
+    conn = get_db_connection()
+    if not conn:
+        print("Failed to connect to database")
+        return []
+    
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("SELECT uid FROM user ORDER BY uid")
+        user_ids = [row[0] for row in cursor.fetchall()]
+        return user_ids
+    except Exception as e:
+        print(f"Error fetching user IDs: {e}")
+        return []
+    finally:
+        cursor.close()
+        conn.close()
+
+if __name__ == "__main__":
     import argparse
-    
-    parser = argparse.ArgumentParser(description='Analyze browsing activity to detect drift events')
-    parser.add_argument('--session-id', type=int, help='Analyze a specific session ID')
-    parser.add_argument('--hours', type=int, default=24, help='Analyze sessions from last N hours (default: 24)')
-    
+    parser = argparse.ArgumentParser(description="Run drift analysis on recent sessions.")
+    parser.add_argument("--hours", type=int, default=24, help="Number of hours back to analyze.")
+    parser.add_argument("--session", type=int, help="A specific session ID to analyze.")
+    parser.add_argument("--user", type=int, help="A specific user ID to analyze.")
+
     args = parser.parse_args()
-    
-    if args.session_id:
-        analyze_drifts_for_session(args.session_id)
+
+    if args.session:
+        print(f"Analyzing specific session: {args.session}")
+        analyze_drifts_for_session(args.session)
+    elif args.user:
+        print(f"Analyzing recent sessions for user: {args.user}")
+        analyze_recent_sessions(args.user, args.hours)
     else:
-        analyze_recent_sessions(args.hours)
+        print("Analyzing all recent sessions for all users...")
+        # Get all user IDs and analyze sessions for each user
+        user_ids = get_all_user_ids()
+        if user_ids:
+            print(f"Found {len(user_ids)} users to analyze")
+            for user_id in user_ids:
+                print(f"\n--- Analyzing sessions for user {user_id} ---")
+                analyze_recent_sessions(user_id, args.hours)
+        else:
+            print("No users found in database")
 

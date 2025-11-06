@@ -4,7 +4,6 @@ from typing import List, Optional
 from datetime import datetime
 
 class SessionStartPayload(BaseModel):
-    user_id: int
     browser_name: str
     browser_version: str
     platform: str
@@ -15,7 +14,7 @@ class SessionResponse(BaseModel):
 
 class TabPayload(BaseModel):
     session_id: int
-    user_id: int # Needed for getOrCreateDomain
+    user_id: Optional[int] = None  # Not needed - backend gets it from JWT token
     url: str
     title: Optional[str] = None
 
@@ -36,7 +35,7 @@ class ActivityEvent(BaseModel):
 
 class EventBatchPayload(BaseModel):
     session_id: int
-    user_id: int
+    user_id: Optional[int] = None  # Not needed - backend gets it from JWT token
     events: List[ActivityEvent]
 
 # Authentication Models

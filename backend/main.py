@@ -116,13 +116,14 @@ async def session_close(payload: dict = Body(...)):
         conn.close()
 
 @app.get("/api/dashboard/insights")
-async def get_insights(user_id: int):
+async def get_insights(current_user: dict = Depends(get_current_user)):
     """Return insights data composed of multiple analytic queries."""
     conn = get_db_connection()
     if conn is None:
         raise HTTPException(status_code=500, detail="Database connection failed")
 
     cursor = conn.cursor()
+    user_id = current_user["user_id"]
 
     def rows_to_dicts(rows, cur):
         if not rows or not cur.description:
@@ -234,12 +235,13 @@ async def get_insights(user_id: int):
 
 
 @app.post("/api/tab/open", response_model=TabResponse)
-async def tab_open(payload: TabPayload):
+async def tab_open(payload: TabPayload, current_user: dict = Depends(get_current_user)):
     conn = get_db_connection()
     if conn is None:
         raise HTTPException(status_code=500, detail="Database connection failed")
     
     cursor = conn.cursor()
+    user_id = current_user["user_id"]
     
     try:
         # 1. Get the clean domain
@@ -253,7 +255,7 @@ async def tab_open(payload: TabPayload):
         # 2. Get or create the domain_id and determine category
         # First check if domain exists
         cursor.execute("SELECT id, category FROM domains WHERE user_id = %s AND domain_name = %s", 
-                      (payload.user_id, domain_name))
+                      (user_id, domain_name))
         result = cursor.fetchone()
         
         domain_exists = result is not None
@@ -263,13 +265,13 @@ async def tab_open(payload: TabPayload):
         else:
             # Create new domain - category will be set below based on whitelist
             cursor.execute("INSERT INTO domains (user_id, domain_name, category) VALUES (%s, %s, 'Neutral')",
-                          (payload.user_id, domain_name))
+                          (user_id, domain_name))
             domain_id = cursor.lastrowid
             current_category = 'Neutral'
         
         # 3. Check if domain is in whitelist
         cursor.execute("SELECT domain_id FROM whitelists WHERE user_id = %s AND domain_id = %s",
-                      (payload.user_id, domain_id))
+                      (user_id, domain_id))
         is_whitelisted = cursor.fetchone() is not None
         
         # 4. Update category based on whitelist rules:
@@ -329,18 +331,19 @@ async def tab_close(payload: dict = Body(...)):
         conn.close()
 
 @app.post("/api/events/batch")
-async def events_batch(payload: EventBatchPayload):
+async def events_batch(payload: EventBatchPayload, current_user: dict = Depends(get_current_user)):
     conn = get_db_connection()
     if conn is None:
         raise HTTPException(status_code=500, detail="Database connection failed")
     
     cursor = conn.cursor()
+    user_id = current_user["user_id"]
     
     insert_data = []
     for event in payload.events:
         insert_data.append((
             payload.session_id,
-            payload.user_id,
+            user_id,
             event.tab_id,
             event.event_type,
             event.timestamp,
@@ -373,13 +376,14 @@ async def events_batch(payload: EventBatchPayload):
     return {"inserted_count": inserted_count}
 
 @app.get("/api/dashboard/analytics")
-async def get_analytics(user_id: int, period_days: int = 7):
+async def get_analytics(period_days: int = 7, current_user: dict = Depends(get_current_user)):
     """Get comprehensive analytics for the dashboard."""
     conn = get_db_connection()
     if conn is None:
         raise HTTPException(status_code=500, detail="Database connection failed")
     
     cursor = conn.cursor()
+    user_id = current_user["user_id"]
 
     try:
         # Helper function to convert rows to dicts
@@ -441,13 +445,14 @@ async def get_analytics(user_id: int, period_days: int = 7):
         conn.close()
 
 @app.get("/api/whitelist")
-async def get_whitelist(user_id: int):
+async def get_whitelist(current_user: dict = Depends(get_current_user)):
     """Get all whitelisted domains for a user."""
     conn = get_db_connection()
     if conn is None:
         raise HTTPException(status_code=500, detail="Database connection failed")
     
     cursor = conn.cursor()
+    user_id = current_user["user_id"]
     
     try:
         def rows_to_dicts(rows, cursor):
@@ -476,14 +481,14 @@ async def get_whitelist(user_id: int):
         conn.close()
 
 @app.post("/api/whitelist")
-async def add_to_whitelist(payload: dict = Body(...)):
+async def add_to_whitelist(payload: dict = Body(...), current_user: dict = Depends(get_current_user)):
     """Add a domain to the user's whitelist by domain_name."""
-    user_id = payload.get('user_id')
+    user_id = current_user["user_id"]
     domain_name = payload.get('domain_name')
     user_reason = payload.get('user_reason', '')
     
-    if not user_id or not domain_name:
-        raise HTTPException(status_code=400, detail="Missing user_id or domain_name")
+    if not domain_name:
+        raise HTTPException(status_code=400, detail="Missing domain_name")
     
     conn = get_db_connection()
     if conn is None:
@@ -526,13 +531,14 @@ async def add_to_whitelist(payload: dict = Body(...)):
         conn.close()
 
 @app.delete("/api/whitelist")
-async def remove_from_whitelist(user_id: int, domain_id: int):
+async def remove_from_whitelist(domain_id: int, current_user: dict = Depends(get_current_user)):
     """Remove a domain from the user's whitelist."""
     conn = get_db_connection()
     if conn is None:
         raise HTTPException(status_code=500, detail="Database connection failed")
     
     cursor = conn.cursor()
+    user_id = current_user["user_id"]
     
     try:
         # Remove from whitelist

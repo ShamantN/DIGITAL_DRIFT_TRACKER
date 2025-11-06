@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Drift Tracker</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="header">
+        <div class="header-title">
+            <img src="../icons/icon48.png" alt="Logo" class="logo">
+            <h3>Digital Drift Tracker</h3>
+        </div>
+        <a href="http://localhost:3001" id="view-dashboard-link" class="view-link">Open Dashboard</a>
+    </div>
+
+    <div class="card">
+        <div class="status-row">
+            <span class="label">Session</span>
+            <span id="sid" class="value">Loading...</span>
+        </div>
+        <div class="status-row">
+            <span class="label">Status</span>
+            <span id="status" class="status-pill ok"><span class="dot"></span>Connected</span>
+        </div>
+    </div>
+
+    <div class="stats">
+        <div class="stat-card">
+            <div class="stat-title">Drifts Today</div>
+            <div id="stat-total" class="stat-value">—</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-title">Total Minutes</div>
+            <div id="stat-minutes" class="stat-value">—</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-title">Top Drift</div>
+            <div id="stat-top" class="stat-value small">—</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="list-header">Recent Drifts</div>
+        <ul id="drift-list" class="drift-list">
+            <li class="loading">Loading...</li>
+        </ul>
+    </div>
+
+    <!-- Authentication Link -->
+    <div class="auth-section">
+        <a href="#" id="auth-link" class="auth-link">Login or sign up for advanced analytics</a>
+    </div>
+    
+    <!-- Authentication Popup -->
+    <div id="auth-popup" class="auth-popup hidden">
+        <div class="auth-popup-content">
+            <div class="auth-popup-header">
+                <button id="auth-close" class="auth-close-btn">×</button>
+            </div>
+            
+            <!-- Login Form -->
+            <div id="login-form" class="auth-form">
+                <h3>Login</h3>
+                <form id="login-form-element">
+                    <div class="form-group">
+                        <label for="login-email">Email</label>
+                        <input type="email" id="login-email" name="email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Password</label>
+                        <input type="password" id="login-password" name="password" required>
+                    </div>
+                    <button type="submit" class="auth-submit-btn">Login</button>
+                </form>
+                <div class="auth-switch">
+                    <span>Don't have an account? </span>
+                    <a href="#" id="show-signup">Sign up</a>
+                </div>
+                <div id="login-error" class="auth-error hidden"></div>
+            </div>
+            
+            <!-- Signup Form -->
+            <div id="signup-form" class="auth-form hidden">
+                <h3>Sign Up</h3>
+                <form id="signup-form-element">
+                    <div class="form-group">
+                        <label for="signup-email">Email</label>
+                        <input type="email" id="signup-email" name="email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="signup-password">Password</label>
+                        <input type="password" id="signup-password" name="password" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="signup-confirm-password">Confirm Password</label>
+                        <input type="password" id="signup-confirm-password" name="confirm_password" required>
+                    </div>
+                    <button type="submit" class="auth-submit-btn">Sign Up</button>
+                </form>
+                <div class="auth-switch">
+                    <span>Already have an account? </span>
+                    <a href="#" id="show-login">Login</a>
+                </div>
+                <div id="signup-error" class="auth-error hidden"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="popup.js"></script>
+</body>
+</html>

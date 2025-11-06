@@ -1,0 +1,9 @@
+# backend/requirements.txt
+fastapi
+uvicorn[standard]
+mysql-connector-python
+pydantic
+python-dotenv
+passlib[bcrypt]
+python-jose[cryptography]
+python-multipart

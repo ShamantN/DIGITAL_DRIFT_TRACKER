@@ -1,0 +1,2 @@
+Status Code: 500
+Response JSON: {'detail': 'Failed to create user: password cannot be longer than 72 bytes, truncate manually if necessary (e.g. my_password[:72])'}

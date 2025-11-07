@@ -29,7 +29,7 @@ python jobs\simulate_activity.py
 | Backend API | http://127.0.0.1:8000 |
 | API Docs (Swagger) | http://127.0.0.1:8000/docs |
 | API Docs (ReDoc) | http://127.0.0.1:8000/redoc |
-| Dashboard | http://localhost:3000 |
+| Dashboard | http://localhost:3001 |
 | Chrome Extensions | chrome://extensions/ |
 
 ## 🔧 Common Commands

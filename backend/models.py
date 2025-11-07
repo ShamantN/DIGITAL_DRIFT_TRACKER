@@ -40,7 +40,7 @@ class EventBatchPayload(BaseModel):
 
 # Authentication Models
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: str  # Allow both email and admin username
     password: str
 
 class UserSignup(BaseModel):

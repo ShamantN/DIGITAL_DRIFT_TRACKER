@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 import mysql.connector
 from database import get_db_connection
 from models import *
+import os
+from dotenv import load_dotenv
 
 app = FastAPI()
 
@@ -25,6 +27,18 @@ def verify_password(plain_password, hashed_password):
 def get_password_hash(password):
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
+def get_db_connection_for_user(user_type='user'):
+    """Get database connection based on user type (admin or user)"""
+    if user_type == 'admin':
+        # Load admin environment variables
+        load_dotenv('.env.admin')
+    else:
+        # Load regular user environment variables
+        load_dotenv('.env.user')
+    
+    # Get connection using the appropriate user credentials
+    return get_db_connection()
+
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
     if expires_delta:
@@ -41,13 +55,14 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: int = payload.get("sub")
         email: str = payload.get("email")
+        role: str = payload.get("role", "user")
         if user_id is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        return {"user_id": user_id, "email": email}
+        return {"user_id": user_id, "email": email, "role": role}
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -73,11 +88,11 @@ def read_root():
 
 @app.post("/api/session/start", response_model=SessionResponse)
 async def session_start(payload: SessionStartPayload, current_user: dict = Depends(get_current_user)):
-    conn = get_db_connection()
+    conn = get_db_connection_for_user('admin')
     if conn is None:
         raise HTTPException(status_code=500, detail="Database connection failed")
     
-    cursor = conn.cursor()
+    cursor = conn.cursor(dictionary=True)
     user_id = current_user["user_id"]
     query = """
         INSERT INTO sessions (user_id, browser_name, browser_version, platform)
@@ -394,7 +409,7 @@ async def get_analytics(period_days: int = 7, current_user: dict = Depends(get_c
             columns = [desc[0] for desc in cursor.description]
             return [dict(zip(columns, row)) for row in rows]
         
-        # Get drift events
+        # Get drift events, for area chart
         query_drifts = """
             SELECT drift_id, drift_type, description, event_start, event_end, 
                    duration_seconds, severity
@@ -407,7 +422,7 @@ async def get_analytics(period_days: int = 7, current_user: dict = Depends(get_c
         drifts_rows = cursor.fetchall()
         drifts = rows_to_dicts(drifts_rows, cursor)
         
-        # Get daily domain summaries
+        # Get daily domain summaries, for bar chart
         query_summaries = """
             SELECT d.domain_name, d.category, dds.summary_date,
                    dds.total_seconds_focused, dds.total_events
@@ -421,7 +436,7 @@ async def get_analytics(period_days: int = 7, current_user: dict = Depends(get_c
         summaries_rows = cursor.fetchall()
         summaries = rows_to_dicts(summaries_rows, cursor)
         
-        # Get category totals
+        # Get category totals, for pie chart
         query_category_totals = """
             SELECT d.category, SUM(dds.total_seconds_focused) as total_seconds
             FROM daily_domain_summary dds
@@ -618,13 +633,43 @@ async def signup(user: UserSignup):
 @app.post("/api/auth/login", response_model=Token)
 async def login(user_credentials: UserLogin):
     """Authenticate user and return access token."""
-    conn = get_db_connection()
-    if conn is None:
-        raise HTTPException(status_code=500, detail="Database connection failed")
-    
-    cursor = conn.cursor()
     
     try:
+        # Check for admin credentials (using database admin user)
+        if user_credentials.email == "ddt_admin":
+            # Get admin database connection
+            conn = get_db_connection_for_user('admin')
+            if conn is None:
+                raise HTTPException(status_code=500, detail="Database connection failed")
+            
+            # Verify admin password using hardcoded check (since admin is a special system user)
+            if user_credentials.password == "admin123":
+                # Create admin access token
+                access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+                access_token = create_access_token(
+                    data={"sub": "admin", "email": "ddt_admin", "role": "admin"},
+                    expires_delta=access_token_expires
+                )
+                return Token(
+                    access_token=access_token,
+                    token_type="bearer",
+                    user_id=0,  # Special admin ID
+                    email="ddt_admin"
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid admin credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        
+        # For regular users, use regular database connection
+        conn = get_db_connection_for_user('user')
+        if conn is None:
+            raise HTTPException(status_code=500, detail="Database connection failed")
+        
+        cursor = conn.cursor()
+        
         # Get user by email
         cursor.execute(
             "SELECT uid, password_hash FROM user WHERE email = %s",
@@ -652,7 +697,7 @@ async def login(user_credentials: UserLogin):
         # Create access token
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
-            data={"sub": str(user_id), "email": user_credentials.email},
+            data={"sub": str(user_id), "email": user_credentials.email, "role": "user"},
             expires_delta=access_token_expires
         )
         
@@ -668,8 +713,10 @@ async def login(user_credentials: UserLogin):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
     finally:
-        cursor.close()
-        conn.close()
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            conn.close()
 
 @app.get("/api/auth/me", response_model=UserResponse)
 async def get_current_user_info(current_user: dict = Depends(get_current_user)):
@@ -710,6 +757,180 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
 # To run this app:
 # In your terminal (with venv activated), run:
 # uvicorn main:app --reload
+
+# --- Admin Endpoints ---
+
+def get_admin_user(current_user: dict = Depends(get_current_user)):
+    """Dependency to ensure only admin users can access admin endpoints."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    return current_user
+
+@app.get("/api/admin/stats")
+async def get_admin_stats(current_user: dict = Depends(get_admin_user)):
+    """Get system-wide statistics for admin dashboard."""
+    conn = get_db_connection_for_user('admin')
+    if conn is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    
+    cursor = conn.cursor()
+    
+    try:
+        # Total users
+        cursor.execute("SELECT COUNT(*) FROM user")
+        total_users = cursor.fetchone()[0]
+        
+        # Active users (users with sessions in last 30 days)
+        cursor.execute("""
+            SELECT COUNT(DISTINCT user_id) 
+            FROM sessions 
+            WHERE start_time > (CURDATE() - INTERVAL 30 DAY)
+        """)
+        active_users = cursor.fetchone()[0]
+        
+        # Total sessions
+        cursor.execute("SELECT COUNT(*) FROM sessions")
+        total_sessions = cursor.fetchone()[0]
+        
+        # Total drift events
+        cursor.execute("SELECT COUNT(*) FROM drift_event")
+        total_drifts = cursor.fetchone()[0]
+        
+        # Average session duration
+        cursor.execute("""
+            SELECT AVG(TIMESTAMPDIFF(MINUTE, start_time, end_time))
+            FROM sessions 
+            WHERE end_time IS NOT NULL
+        """)
+        avg_session_duration = cursor.fetchone()[0] or 0
+        
+        # Top domains by total time across all users
+        cursor.execute("""
+            SELECT d.domain_name, d.category, SUM(dds.total_seconds_focused) as total_time
+            FROM daily_domain_summary dds
+            JOIN domains d ON dds.domain_id = d.id
+            GROUP BY d.domain_name, d.category
+            ORDER BY total_time DESC
+            LIMIT 10
+        """)
+        top_domains = []
+        for row in cursor.fetchall():
+            top_domains.append({
+                "domain": row[0],
+                "category": row[1],
+                "total_seconds": row[2]
+            })
+        
+        return {
+            "total_users": total_users,
+            "active_users": active_users,
+            "total_sessions": total_sessions,
+            "total_drifts": total_drifts,
+            "avg_session_duration_minutes": round(avg_session_duration, 2),
+            "top_domains": top_domains
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get admin stats: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.get("/api/admin/users")
+async def get_admin_users(current_user: dict = Depends(get_admin_user)):
+    """Get list of all users for admin dashboard."""
+    conn = get_db_connection()
+    if conn is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    
+    cursor = conn.cursor()
+    
+    try:
+        query = """
+            SELECT 
+                u.uid, u.email, u.created_at,
+                COUNT(DISTINCT s.sid) as session_count,
+                COUNT(DISTINCT de.drift_id) as drift_count
+            FROM user u
+            LEFT JOIN sessions s ON u.uid = s.user_id
+            LEFT JOIN drift_event de ON s.sid = de.session_id
+            GROUP BY u.uid, u.email, u.created_at
+            ORDER BY u.created_at DESC
+        """
+        cursor.execute(query)
+        results = cursor.fetchall()
+        
+        users = []
+        for row in results:
+            users.append({
+                "id": row[0],
+                "email": row[1],
+                "created_at": row[2].isoformat() if row[2] else None,
+                "session_count": row[3] or 0,
+                "drift_count": row[4] or 0
+            })
+        
+        return {"users": users}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get users: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.delete("/api/admin/users/{user_id}")
+async def delete_user(user_id: int, current_user: dict = Depends(get_admin_user)):
+    """Delete a user and all associated data (admin only)."""
+    conn = get_db_connection()
+    if conn is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    
+    cursor = conn.cursor()
+    
+    try:
+        # First, check if the user exists
+        cursor.execute("SELECT uid, email FROM user WHERE uid = %s", (user_id,))
+        user_result = cursor.fetchone()
+        
+        if not user_result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with ID {user_id} not found"
+            )
+        
+        user_email = user_result[1]
+        
+        # Delete the user (this will cascade delete all related data due to foreign key constraints)
+        cursor.execute("DELETE FROM user WHERE uid = %s", (user_id,))
+        
+        # Check if any rows were affected
+        if cursor.rowcount == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with ID {user_id} not found"
+            )
+        
+        conn.commit()
+        
+        return {
+            "status": "success",
+            "message": f"User {user_email} (ID: {user_id}) and all associated data have been deleted",
+            "deleted_user_id": user_id,
+            "deleted_user_email": user_email
+        }
+        
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
 
 if __name__ == "__main__":
     import uvicorn

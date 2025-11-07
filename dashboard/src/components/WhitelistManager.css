@@ -1,0 +1,195 @@
+/* dashboard/src/components/WhitelistManager.css */
+.whitelist-container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.whitelist-header {
+  margin-bottom: 30px;
+}
+
+.whitelist-header h2 {
+  color: #282c34;
+  margin-bottom: 10px;
+}
+
+.whitelist-description {
+  color: #666;
+  line-height: 1.6;
+  margin-top: 10px;
+}
+
+.whitelist-card {
+  background-color: white;
+  border-radius: 8px;
+  padding: 25px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  margin-bottom: 20px;
+}
+
+.whitelist-card h3 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: #282c34;
+  border-bottom: 2px solid #e5e7eb;
+  padding-bottom: 10px;
+}
+
+.whitelist-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group label {
+  font-weight: 600;
+  color: #333;
+}
+
+.form-group input {
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: border-color 0.3s;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #4CAF50;
+}
+
+.form-group small {
+  color: #666;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.btn-add {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 4px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  align-self: flex-start;
+}
+
+.btn-add:hover {
+  background-color: #45a049;
+}
+
+.btn-remove {
+  background-color: #f44336;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.btn-remove:hover {
+  background-color: #da190b;
+}
+
+.message {
+  padding: 12px 16px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  font-weight: 500;
+}
+
+.message-error {
+  background-color: #ffebee;
+  color: #c62828;
+  border-left: 4px solid #c62828;
+}
+
+.message-success {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+  border-left: 4px solid #2e7d32;
+}
+
+.whitelist-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+
+.whitelist-table thead {
+  background-color: #f5f5f5;
+}
+
+.whitelist-table th {
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #333;
+  border-bottom: 2px solid #ddd;
+}
+
+.whitelist-table td {
+  padding: 12px;
+  border-bottom: 1px solid #eee;
+}
+
+.whitelist-table tbody tr:hover {
+  background-color: #f9f9f9;
+}
+
+.category-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.category-productive {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+
+.no-items {
+  color: #666;
+  font-style: italic;
+  text-align: center;
+  padding: 40px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .whitelist-container {
+    padding: 15px;
+  }
+
+  .whitelist-table {
+    font-size: 14px;
+  }
+
+  .whitelist-table th,
+  .whitelist-table td {
+    padding: 8px;
+  }
+
+  .whitelist-table th:nth-child(3),
+  .whitelist-table td:nth-child(3) {
+    display: none; /* Hide reason column on mobile */
+  }
+}
+
+

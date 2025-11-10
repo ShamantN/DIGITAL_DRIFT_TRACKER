@@ -170,21 +170,34 @@ async def get_insights(current_user: dict = Depends(get_current_user)):
         cursor.execute(q5, (user_id,))
         unclassified_domains = rows_to_dicts(cursor.fetchall(), cursor)
 
-        # Query 6: Tab Switches vs Productivity
+        # Query 6: Tab Switches vs Productivity (per-session productive minutes)
+        # Computes productive_seconds strictly within each session boundaries by summing
+        # focus durations on tabs categorized as 'Productive'.
         q6 = (
             """
             SELECT 
                 s.sid, s.start_time, TIMESTAMPDIFF(MINUTE, s.start_time, s.end_time) AS total_minutes,
                 (SELECT COUNT(*) 
                  FROM activity_event ae 
-                 WHERE ae.session_id = s.sid AND ae.event_type = 'TAB_FOCUS' 
+                 WHERE ae.session_id = s.sid AND ae.event_type = 'TAB_FOCUS'
                 ) AS tab_switches,
-                (SELECT COALESCE(SUM(dds.total_seconds_focused), 0)
-                 FROM daily_domain_summary dds
-                 JOIN domains d ON dds.domain_id = d.id
-                 WHERE dds.user_id = s.user_id 
-                   AND d.category = 'Productive'
-                   AND dds.summary_date = DATE(s.start_time)
+                (
+                    SELECT COALESCE(SUM(
+                        TIMESTAMPDIFF(SECOND,
+                            ae.timestamp,
+                            LEAST(COALESCE(ae.next_ts, s.end_time), s.end_time)
+                        )
+                    ), 0)
+                    FROM (
+                        SELECT 
+                            ae.session_id, ae.timestamp, ae.tab_id,
+                            LEAD(ae.timestamp) OVER (PARTITION BY ae.session_id ORDER BY ae.timestamp) AS next_ts
+                        FROM activity_event ae
+                        WHERE ae.session_id = s.sid AND ae.event_type = 'TAB_FOCUS'
+                    ) AS ae
+                    JOIN tab t ON ae.tab_id = t.tid
+                    JOIN domains d ON t.domain_id = d.id
+                    WHERE d.category = 'Productive'
                 ) AS productive_seconds
             FROM sessions s
             WHERE s.user_id = %s AND s.end_time IS NOT NULL
